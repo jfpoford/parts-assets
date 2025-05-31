@@ -4,39 +4,73 @@
   <meta charset="UTF-8">
   <title>Barcode Label Splitter</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
-  <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.1/dist/tesseract.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';</script>
   <style>
     body { font-family: sans-serif; padding: 1em; }
-    canvas { border: 1px solid #ccc; margin-bottom: 1em; max-width: 100%; }
+    canvas { display: none; }
     .label-preview { margin-bottom: 20px; border: 1px solid #ddd; padding: 10px; }
     button { margin-top: 5px; }
     .loading { color: green; margin: 10px 0; }
     .version { color: gray; font-size: 0.9em; margin-top: 1em; }
+    .controls { margin-bottom: 1em; }
   </style>
 </head>
 <body>
   <h1>Barcode Label Splitter</h1>
-  <div class="version">v0.9.2</div>
+  <div class="version">v1.1.8 - Added Loading Message, Y Fix, Debug Stroke</div>
+  <details class="controls">
+    <summary style="cursor: pointer; font-weight: bold;">Advanced Options (Margins & Shrink)</summary>
+    <div style="margin-top: 0.5em;">
+      <label>Columns: <input type="number" id="cols" value="2" min="1" style="width: 50px;"></label>
+      <label>Rows: <input type="number" id="rows" value="5" min="1" style="width: 50px;"></label>
+      <label>Top Margin (px): <input type="number" id="top-margin" value="55" style="width: 60px;"></label>
+      <label>Bottom Margin (px): <input type="number" id="bottom-margin" value="40" style="width: 60px;"></label>
+      <label>Shrink %: <input type="number" id="shrink" value="96" min="1" max="100" style="width: 60px;"></label>
+    </div>
+  </details>
   <input type="file" id="pdf-upload" accept="application/pdf">
   <button id="process-button" disabled>Process Labels</button>
+  <button id="download-all" style="display:none;">Download All Labels as ZIP</button>
   <div id="output"></div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script>
+  function computeRowHeights(totalHeight, rows) {
+    const baseHeight = Math.floor(totalHeight / rows);
+    const remainder = totalHeight % rows;
+    const heights = new Array(rows).fill(baseHeight);
+    for (let i = 0; i < remainder; i++) {
+      heights[i] += 1;
+    }
+    return heights;
+  }
+</script>
   <script>
     const output = document.getElementById('output');
     const processButton = document.getElementById('process-button');
+    const downloadAllButton = document.getElementById('download-all');
     const fileInput = document.getElementById('pdf-upload');
     let selectedFile = null;
+    let labelImages = [];
 
     fileInput.addEventListener('change', (e) => {
       selectedFile = e.target.files[0];
       processButton.disabled = !selectedFile;
+      downloadAllButton.style.display = 'none';
+      labelImages = [];
     });
 
     processButton.addEventListener('click', async () => {
-      if (!selectedFile) return;
+      const cols = parseInt(document.getElementById('cols').value);
+      const rows = parseInt(document.getElementById('rows').value);
+      const topMargin = parseInt(document.getElementById('top-margin').value);
+      const bottomMargin = parseInt(document.getElementById('bottom-margin').value);
+      const shrinkFactor = parseInt(document.getElementById('shrink').value) / 100;
+
+      if (!selectedFile || cols < 1 || rows < 1) return;
+
+      output.innerHTML = '<p class="loading">Processing PDF and slicing labels…</p>';
+      labelImages = [];
 
       const fileReader = new FileReader();
       fileReader.onload = async function () {
@@ -56,100 +90,76 @@
 
             await page.render({ canvasContext: context, viewport }).promise;
 
-            const loadingText = document.createElement('div');
-            loadingText.className = 'loading';
-            loadingText.textContent = `Processing page ${pageNum}...`;
-            output.appendChild(loadingText);
+            const croppedHeight = canvas.height - topMargin - bottomMargin;
+            const rawLabelWidth = canvas.width / cols;
+            const rawLabelHeight = Math.floor(croppedHeight / rows);
+            const labelWidth = rawLabelWidth * shrinkFactor;
+            const labelHeight = rawLabelHeight * shrinkFactor;
+            let labelCount = 0;
 
-            const imgData = canvas.toDataURL();
-            Tesseract.recognize(imgData, 'eng', { logger: m => console.log(m) })
-              .then(({ data }) => {
-                loadingText.remove();
+            for (let row = 0; row < rows; row++) {
+              for (let col = 0; col < cols; col++) {
+                labelCount++;
+                const x = col * rawLabelWidth;
+                const y = topMargin + row * rawLabelHeight;
 
-                console.log("Tesseract lines:", data.lines.length);
-                console.log("=== OCR TEXT OUTPUT ===");
-                data.lines.forEach(line => console.log(line.text.trim()));
+                const labelCanvas = document.createElement('canvas');
+                const labelCtx = labelCanvas.getContext('2d');
+                labelCanvas.width = labelWidth;
+                labelCanvas.height = labelHeight;
 
-                if (!data.lines.length) {
-                  output.innerHTML += '<p style="color:red;">No text was recognized. Try using a higher resolution PDF.</p>';
-                  return;
-                }
+                labelCtx.drawImage(canvas, x, y, labelWidth, labelHeight, 0, 0, labelWidth, labelHeight);
+                labelCtx.strokeStyle = 'red';
+                labelCtx.lineWidth = 2;
+                labelCtx.strokeRect(0, 0, labelWidth, labelHeight);
 
-                let blocks = [];
-                let block = [];
-                let inside = false;
+                const imgData = labelCanvas.toDataURL('image/png');
+                labelImages.push({ name: `Label_${pageNum}_${labelCount}.png`, data: imgData });
 
-                data.lines.forEach(line => {
-                  const text = line.text.trim().toLowerCase();
-                  if (text.includes('ford motor company') && text.includes('date')) {
-                    block = [line];
-                    inside = true;
-                  } else if (inside) {
-                    block.push(line);
-                    if (text.includes('dealer') && text.includes('qnty')) {
-                      blocks.push([...block]);
-                      block = [];
-                      inside = false;
-                    }
-                  }
-                });
+                const previewDiv = document.createElement('div');
+                previewDiv.className = 'label-preview';
 
-                if (blocks.length === 0) {
-                  output.innerHTML += '<p style="color:red;">No label blocks matched expected format.</p>';
-                  return;
-                }
+                const img = new Image();
+                img.src = imgData;
+                img.style.maxWidth = '100%';
+                previewDiv.appendChild(img);
 
-                blocks.forEach((labelLines, i) => {
-                  const top = Math.min(...labelLines.map(l => l.bbox.y0));
-                  const bottom = Math.max(...labelLines.map(l => l.bbox.y1));
-                  const left = 0;
-                  const right = canvas.width;
-                  const height = bottom - top;
+                const downloadBtn = document.createElement('button');
+                downloadBtn.textContent = `Download Label ${labelCount}`;
+                downloadBtn.onclick = () => {
+                  const a = document.createElement('a');
+                  a.href = imgData;
+                  a.download = `Label_${pageNum}_${labelCount}.png`;
+                  a.click();
+                };
+                previewDiv.appendChild(downloadBtn);
+                output.appendChild(previewDiv);
+              }
+            }
+          }
 
-                  const labelCanvas = document.createElement('canvas');
-                  const labelCtx = labelCanvas.getContext('2d');
-                  labelCanvas.width = right;
-                  labelCanvas.height = height;
-                  labelCtx.drawImage(canvas, left, top, right, height, 0, 0, right, height);
-
-                  let partNumber = 'unknown';
-                  labelLines.forEach(l => {
-                    const match = l.text.match(/Part:\s*(\S+)/);
-                    if (match) partNumber = match[1];
-                  });
-
-                  const previewDiv = document.createElement('div');
-                  previewDiv.className = 'label-preview';
-
-                  const img = new Image();
-                  img.src = labelCanvas.toDataURL();
-                  img.style.maxWidth = '100%';
-                  previewDiv.appendChild(img);
-
-                  const downloadBtn = document.createElement('button');
-                  downloadBtn.textContent = `Download ${partNumber}`;
-                  downloadBtn.onclick = () => {
-                    const a = document.createElement('a');
-                    a.href = labelCanvas.toDataURL('image/png');
-                    a.download = `Label-${partNumber}.png`;
-                    a.click();
-                  };
-                  previewDiv.appendChild(downloadBtn);
-                  output.appendChild(previewDiv);
-                });
-              })
-              .catch(err => {
-                console.error('Tesseract error:', err);
-                loadingText.remove();
-                output.innerHTML += '<p style="color: red;">OCR failed to process. Try reloading the page.</p>';
-              });
+          if (labelImages.length > 0) {
+            downloadAllButton.style.display = 'inline-block';
           }
         } catch (error) {
           console.error('PDF.js error:', error);
-          output.innerHTML += '<p style="color: red;">Failed to load or parse the PDF. Please check the file or try again.</p>';
+          output.innerHTML += '<p style="color: red;">Failed to load or process the PDF. Please check the file or try again.</p>';
         }
       };
       fileReader.readAsArrayBuffer(selectedFile);
+    });
+
+    downloadAllButton.addEventListener('click', () => {
+      const zip = new JSZip();
+      labelImages.forEach((label) => {
+        zip.file(label.name, label.data.split(',')[1], { base64: true });
+      });
+      zip.generateAsync({ type: 'blob' }).then(content => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(content);
+        a.download = 'labels.zip';
+        a.click();
+      });
     });
   </script>
 </body>
