@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <title>Barcode Label Splitter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
-  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';</script>
   <style>
     body { font-family: sans-serif; padding: 1em; }
     canvas { display: none; }
@@ -17,7 +17,8 @@
 </head>
 <body>
   <h1>Barcode Label Splitter</h1>
-  <div class="version">v1.1.8 - Added Loading Message, Y Fix, Debug Stroke</div>
+  <div class="version">v1.1.9 - Fixed Label Sizing Bug</div>
+
   <details class="controls">
     <summary style="cursor: pointer; font-weight: bold;">Advanced Options (Margins & Shrink)</summary>
     <div style="margin-top: 0.5em;">
@@ -28,6 +29,7 @@
       <label>Shrink %: <input type="number" id="shrink" value="96" min="1" max="100" style="width: 60px;"></label>
     </div>
   </details>
+
   <input type="file" id="pdf-upload" accept="application/pdf">
   <button id="process-button" disabled>Process Labels</button>
   <button id="download-all" style="display:none;">Download All Labels as ZIP</button>
@@ -35,17 +37,16 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-  function computeRowHeights(totalHeight, rows) {
-    const baseHeight = Math.floor(totalHeight / rows);
-    const remainder = totalHeight % rows;
-    const heights = new Array(rows).fill(baseHeight);
-    for (let i = 0; i < remainder; i++) {
-      heights[i] += 1;
+    function computeRowHeights(totalHeight, rows) {
+      const baseHeight = Math.floor(totalHeight / rows);
+      const remainder = totalHeight % rows;
+      const heights = new Array(rows).fill(baseHeight);
+      for (let i = 0; i < remainder; i++) {
+        heights[i] += 1;
+      }
+      return heights;
     }
-    return heights;
-  }
-</script>
-  <script>
+
     const output = document.getElementById('output');
     const processButton = document.getElementById('process-button');
     const downloadAllButton = document.getElementById('download-all');
@@ -92,7 +93,7 @@
 
             const croppedHeight = canvas.height - topMargin - bottomMargin;
             const rawLabelWidth = canvas.width / cols;
-            const rowHeights = computeRowHeights(croppedHeight, rows);
+            const rawLabelHeight = croppedHeight / rows;
             const labelWidth = rawLabelWidth * shrinkFactor;
             const labelHeight = rawLabelHeight * shrinkFactor;
             let labelCount = 0;
@@ -108,7 +109,12 @@
                 labelCanvas.width = labelWidth;
                 labelCanvas.height = labelHeight;
 
-                labelCtx.drawImage(canvas, x, y, labelWidth, labelHeight, 0, 0, labelWidth, labelHeight);
+                labelCtx.drawImage(
+                  canvas,
+                  x, y, rawLabelWidth, rawLabelHeight,
+                  0, 0, labelWidth, labelHeight
+                );
+
                 labelCtx.strokeStyle = 'red';
                 labelCtx.lineWidth = 2;
                 labelCtx.strokeRect(0, 0, labelWidth, labelHeight);
@@ -121,6 +127,7 @@
 
                 const img = new Image();
                 img.src = imgData;
+                img.alt = `Preview of Label ${labelCount}`;
                 img.style.maxWidth = '100%';
                 previewDiv.appendChild(img);
 
