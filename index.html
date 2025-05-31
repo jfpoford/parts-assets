@@ -92,7 +92,7 @@
 
             const croppedHeight = canvas.height - topMargin - bottomMargin;
             const rawLabelWidth = canvas.width / cols;
-            const rawLabelHeight = Math.floor(croppedHeight / rows);
+            const rowHeights = computeRowHeights(croppedHeight, rows);
             const labelWidth = rawLabelWidth * shrinkFactor;
             const labelHeight = rawLabelHeight * shrinkFactor;
             let labelCount = 0;
