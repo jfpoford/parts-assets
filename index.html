@@ -20,14 +20,22 @@
 <body>
   <h1>Barcode Label Splitter</h1>
   <input type="file" id="pdf-upload" accept="application/pdf">
+  <button id="process-button" disabled>Process Labels</button>
   <div id="output"></div>
 
   <script>
     const output = document.getElementById('output');
+    const processButton = document.getElementById('process-button');
+    const fileInput = document.getElementById('pdf-upload');
+    let selectedFile = null;
 
-    document.getElementById('pdf-upload').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+    fileInput.addEventListener('change', (e) => {
+      selectedFile = e.target.files[0];
+      processButton.disabled = !selectedFile;
+    });
+
+    processButton.addEventListener('click', async () => {
+      if (!selectedFile) return;
 
       const fileReader = new FileReader();
       fileReader.onload = async function () {
@@ -137,7 +145,7 @@
           output.innerHTML += '<p style="color: red;">Failed to load or parse the PDF. Please check the file or try again.</p>';
         }
       };
-      fileReader.readAsArrayBuffer(file);
+      fileReader.readAsArrayBuffer(selectedFile);
     });
   </script>
 </body>
