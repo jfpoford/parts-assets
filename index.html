@@ -2,168 +2,171 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Barcode Label Splitter</title>
+  <title>Barcode Grid Editor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 1em; }
-    canvas { display: none; }
-    .label-preview { margin-bottom: 20px; border: 1px solid #ddd; padding: 10px; }
-    button { margin-top: 5px; }
-    .loading { color: green; margin: 10px 0; }
-    .version { color: gray; font-size: 0.9em; margin-top: 1em; }
-    .controls { margin-bottom: 1em; }
+    canvas { border: 1px solid #aaa; }
+    .controls label { display: block; margin: 0.5em 0; }
+    .grid-overlay {
+      position: absolute;
+      border: 1px dashed red;
+      box-sizing: border-box;
+      cursor: move;
+    }
+    #canvas-container { position: relative; display: inline-block; }
+    #output img { max-width: 100px; margin: 4px; border: 1px solid #ccc; }
   </style>
 </head>
 <body>
-  <h1>Barcode Label Splitter</h1>
-  <div class="version">v1.1.9 - Fixed Label Sizing Bug</div>
-
-  <details class="controls">
-    <summary style="cursor: pointer; font-weight: bold;">Advanced Options (Margins & Shrink)</summary>
-    <div style="margin-top: 0.5em;">
-      <label>Columns: <input type="number" id="cols" value="2" min="1" style="width: 50px;"></label>
-      <label>Rows: <input type="number" id="rows" value="5" min="1" style="width: 50px;"></label>
-      <label>Top Margin (px): <input type="number" id="top-margin" value="55" style="width: 60px;"></label>
-      <label>Bottom Margin (px): <input type="number" id="bottom-margin" value="40" style="width: 60px;"></label>
-      <label>Shrink %: <input type="number" id="shrink" value="96" min="1" max="100" style="width: 60px;"></label>
-    </div>
-  </details>
-
+  <h1>Barcode Grid Splitter</h1>
   <input type="file" id="pdf-upload" accept="application/pdf">
-  <button id="process-button" disabled>Process Labels</button>
-  <button id="download-all" style="display:none;">Download All Labels as ZIP</button>
+  <div class="controls">
+    <label>Columns: <input type="number" id="cols" value="2" min="1"></label>
+    <label>Rows: <input type="number" id="rows" value="5" min="1"></label>
+    <label>Top Margin: <input type="number" id="top-margin" value="55"></label>
+    <label>Bottom Margin: <input type="number" id="bottom-margin" value="40"></label>
+    <label>Left Margin: <input type="number" id="left-margin" value="10"></label>
+    <label>Right Margin: <input type="number" id="right-margin" value="10"></label>
+    <button id="process">Preview Grid</button>
+    <button id="export" disabled>Export All Labels</button>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="pdf-canvas"></canvas>
+  </div>
+
+  <h2>Previews</h2>
   <div id="output"></div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    function computeRowHeights(totalHeight, rows) {
-      const baseHeight = Math.floor(totalHeight / rows);
-      const remainder = totalHeight % rows;
-      const heights = new Array(rows).fill(baseHeight);
-      for (let i = 0; i < remainder; i++) {
-        heights[i] += 1;
-      }
-      return heights;
-    }
-
-    const output = document.getElementById('output');
-    const processButton = document.getElementById('process-button');
-    const downloadAllButton = document.getElementById('download-all');
     const fileInput = document.getElementById('pdf-upload');
-    let selectedFile = null;
-    let labelImages = [];
+    const canvas = document.getElementById('pdf-canvas');
+    const ctx = canvas.getContext('2d');
+    const processBtn = document.getElementById('process');
+    const exportBtn = document.getElementById('export');
+    const output = document.getElementById('output');
+    const container = document.getElementById('canvas-container');
 
-    fileInput.addEventListener('change', (e) => {
-      selectedFile = e.target.files[0];
-      processButton.disabled = !selectedFile;
-      downloadAllButton.style.display = 'none';
-      labelImages = [];
+    let labelImages = [];
+    let pageImage = null;
+
+    let margins = {};
+    let draggableBoxes = [];
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async function () {
+        const typedArray = new Uint8Array(reader.result);
+        const pdfDoc = await pdfjsLib.getDocument({ data: typedArray }).promise;
+        const page = await pdfDoc.getPage(1);
+        const viewport = page.getViewport({ scale: 2 });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        exportBtn.disabled = false;
+        pageImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      };
+      reader.readAsArrayBuffer(file);
     });
 
-    processButton.addEventListener('click', async () => {
+    processBtn.addEventListener('click', () => {
+      output.innerHTML = '';
+      labelImages = [];
+      draggableBoxes = [];
       const cols = parseInt(document.getElementById('cols').value);
       const rows = parseInt(document.getElementById('rows').value);
-      const topMargin = parseInt(document.getElementById('top-margin').value);
-      const bottomMargin = parseInt(document.getElementById('bottom-margin').value);
-      const shrinkFactor = parseInt(document.getElementById('shrink').value) / 100;
+      margins.top = parseInt(document.getElementById('top-margin').value);
+      margins.bottom = parseInt(document.getElementById('bottom-margin').value);
+      margins.left = parseInt(document.getElementById('left-margin').value);
+      margins.right = parseInt(document.getElementById('right-margin').value);
 
-      if (!selectedFile || cols < 1 || rows < 1) return;
+      const usableWidth = canvas.width - margins.left - margins.right;
+      const usableHeight = canvas.height - margins.top - margins.bottom;
+      const fullRowHeight = usableHeight / rows;
+      const labelHeight = fullRowHeight * 0.9;
+      const yOffset = (fullRowHeight - labelHeight) / 2;
+      const labelWidth = usableWidth / cols;
 
-      output.innerHTML = '<p class="loading">Processing PDF and slicing labels…</p>';
-      labelImages = [];
+      container.querySelectorAll('.grid-overlay').forEach(el => el.remove());
 
-      const fileReader = new FileReader();
-      fileReader.onload = async function () {
-        const typedArray = new Uint8Array(this.result);
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const x = margins.left + col * labelWidth;
+          const shift = -20 + (row >= rows - 2 ? -20 : 0);
+          const y = margins.top + row * fullRowHeight + yOffset + shift;
 
-        try {
-          const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
-          output.innerHTML = '';
+          const overlay = document.createElement('div');
+          overlay.className = 'grid-overlay';
+          overlay.style.left = `${x}px`;
+          overlay.style.top = `${y}px`;
+          overlay.style.width = `${labelWidth}px`;
+          overlay.style.height = `${labelHeight}px`;
+          overlay.dataset.x = x;
+          overlay.dataset.y = y;
+          overlay.dataset.w = labelWidth;
+          overlay.dataset.h = labelHeight;
+          container.appendChild(overlay);
 
-          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-            const page = await pdf.getPage(pageNum);
-            const viewport = page.getViewport({ scale: 2 });
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-
-            await page.render({ canvasContext: context, viewport }).promise;
-
-            const croppedHeight = canvas.height - topMargin - bottomMargin;
-            const rawLabelWidth = canvas.width / cols;
-            const rawLabelHeight = croppedHeight / rows;
-            const labelWidth = rawLabelWidth * shrinkFactor;
-            const labelHeight = rawLabelHeight * shrinkFactor;
-            let labelCount = 0;
-
-            for (let row = 0; row < rows; row++) {
-              for (let col = 0; col < cols; col++) {
-                labelCount++;
-                const x = col * rawLabelWidth;
-                const y = topMargin + row * rawLabelHeight;
-
-                const labelCanvas = document.createElement('canvas');
-                const labelCtx = labelCanvas.getContext('2d');
-                labelCanvas.width = labelWidth;
-                labelCanvas.height = labelHeight;
-
-                labelCtx.drawImage(
-                  canvas,
-                  x, y, rawLabelWidth, rawLabelHeight,
-                  0, 0, labelWidth, labelHeight
-                );
-
-                labelCtx.strokeStyle = 'red';
-                labelCtx.lineWidth = 2;
-                labelCtx.strokeRect(0, 0, labelWidth, labelHeight);
-
-                const imgData = labelCanvas.toDataURL('image/png');
-                labelImages.push({ name: `Label_${pageNum}_${labelCount}.png`, data: imgData });
-
-                const previewDiv = document.createElement('div');
-                previewDiv.className = 'label-preview';
-
-                const img = new Image();
-                img.src = imgData;
-                img.alt = `Preview of Label ${labelCount}`;
-                img.style.maxWidth = '100%';
-                previewDiv.appendChild(img);
-
-                const downloadBtn = document.createElement('button');
-                downloadBtn.textContent = `Download Label ${labelCount}`;
-                downloadBtn.onclick = () => {
-                  const a = document.createElement('a');
-                  a.href = imgData;
-                  a.download = `Label_${pageNum}_${labelCount}.png`;
-                  a.click();
-                };
-                previewDiv.appendChild(downloadBtn);
-                output.appendChild(previewDiv);
-              }
-            }
-          }
-
-          if (labelImages.length > 0) {
-            downloadAllButton.style.display = 'inline-block';
-          }
-        } catch (error) {
-          console.error('PDF.js error:', error);
-          output.innerHTML += '<p style="color: red;">Failed to load or process the PDF. Please check the file or try again.</p>';
+          makeDraggable(overlay);
+          draggableBoxes.push(overlay);
         }
-      };
-      fileReader.readAsArrayBuffer(selectedFile);
+      }
     });
 
-    downloadAllButton.addEventListener('click', () => {
-      const zip = new JSZip();
-      labelImages.forEach((label) => {
-        zip.file(label.name, label.data.split(',')[1], { base64: true });
+    function makeDraggable(el) {
+      let isDragging = false, startX, startY, origX, origY;
+      el.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        origX = parseInt(el.style.left);
+        origY = parseInt(el.style.top);
+        e.preventDefault();
       });
-      zip.generateAsync({ type: 'blob' }).then(content => {
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        el.style.left = `${origX + dx}px`;
+        el.style.top = `${origY + dy}px`;
+        el.dataset.x = origX + dx;
+        el.dataset.y = origY + dy;
+      });
+      window.addEventListener('mouseup', () => isDragging = false);
+    }
+
+    exportBtn.addEventListener('click', () => {
+      const zip = new JSZip();
+      labelImages = [];
+      output.innerHTML = '';
+      draggableBoxes.forEach((box, i) => {
+        const x = parseInt(box.dataset.x);
+        const y = parseInt(box.dataset.y);
+        const w = parseInt(box.dataset.w);
+        const h = parseInt(box.dataset.h);
+
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = w;
+        tempCanvas.height = h;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.putImageData(pageImage, -x, -y);
+        const dataUrl = tempCanvas.toDataURL('image/png');
+
+        const name = `label_${i + 1}.png`;
+        zip.file(name, dataUrl.split(',')[1], { base64: true });
+
+        const img = new Image();
+        img.src = dataUrl;
+        output.appendChild(img);
+      });
+      zip.generateAsync({ type: 'blob' }).then(blob => {
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(content);
+        a.href = URL.createObjectURL(blob);
         a.download = 'labels.zip';
         a.click();
       });
