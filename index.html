@@ -12,7 +12,16 @@
       position: absolute;
       border: 1px dashed red;
       box-sizing: border-box;
-      cursor: move;
+    }
+    .handle {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: red;
+      cursor: se-resize;
+      bottom: 0;
+      right: 0;
+      z-index: 10;
     }
     #canvas-container { position: relative; display: inline-block; }
     #output img { max-width: 100px; margin: 4px; border: 1px solid #ccc; }
@@ -52,7 +61,6 @@
 
     let labelImages = [];
     let pageImage = null;
-
     let margins = {};
     let draggableBoxes = [];
 
@@ -78,6 +86,8 @@
       output.innerHTML = '';
       labelImages = [];
       draggableBoxes = [];
+      container.querySelectorAll('.grid-overlay').forEach(el => el.remove());
+
       const cols = parseInt(document.getElementById('cols').value);
       const rows = parseInt(document.getElementById('rows').value);
       margins.top = parseInt(document.getElementById('top-margin').value);
@@ -87,18 +97,16 @@
 
       const usableWidth = canvas.width - margins.left - margins.right;
       const usableHeight = canvas.height - margins.top - margins.bottom;
-      const fullRowHeight = usableHeight / rows;
-      const labelHeight = fullRowHeight * 0.9;
-      const yOffset = (fullRowHeight - labelHeight) / 2;
       const labelWidth = usableWidth / cols;
+      const fullRowHeight = usableHeight / rows;
+      const labelHeight = fullRowHeight;
 
-      container.querySelectorAll('.grid-overlay').forEach(el => el.remove());
+      let referenceBox = null;
 
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const x = margins.left + col * labelWidth;
-          const shift = -20 + (row >= rows - 2 ? -20 : 0);
-          const y = margins.top + row * fullRowHeight + yOffset + shift;
+          const y = margins.top + row * labelHeight;
 
           const overlay = document.createElement('div');
           overlay.className = 'grid-overlay';
@@ -111,33 +119,93 @@
           overlay.dataset.w = labelWidth;
           overlay.dataset.h = labelHeight;
           container.appendChild(overlay);
-
-          makeDraggable(overlay);
           draggableBoxes.push(overlay);
+
+          if (row === 0 && col === 0) {
+            referenceBox = overlay;
+            makeDraggable(referenceBox);
+            makeResizableMaster(referenceBox, cols, rows, container);
+          }
         }
       }
     });
 
-    function makeDraggable(el) {
-      let isDragging = false, startX, startY, origX, origY;
-      el.addEventListener('mousedown', (e) => {
-        isDragging = true;
+    function makeDraggable(box) {
+      box.addEventListener('mousedown', (e) => {
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const origX = parseInt(box.style.left);
+        const origY = parseInt(box.style.top);
+
+        function onMove(ev) {
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+          updateGridFromBox(box, box.offsetWidth, box.offsetHeight, origX + dx, origY + dy);
+        }
+
+        function onUp() {
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+        }
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      });
+    }
+
+    function makeResizableMaster(box, cols, rows, container) {
+      const handle = document.createElement('div');
+      handle.className = 'handle';
+      box.appendChild(handle);
+
+      let isResizing = false, startX, startY, startW, startH;
+
+      handle.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        isResizing = true;
         startX = e.clientX;
         startY = e.clientY;
-        origX = parseInt(el.style.left);
-        origY = parseInt(el.style.top);
+        startW = box.offsetWidth;
+        startH = box.offsetHeight;
         e.preventDefault();
       });
+
       window.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
+        if (!isResizing) return;
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
-        el.style.left = `${origX + dx}px`;
-        el.style.top = `${origY + dy}px`;
-        el.dataset.x = origX + dx;
-        el.dataset.y = origY + dy;
+        const newW = startW + dx;
+        const newH = startH + dy;
+        updateGridFromBox(box, newW, newH);
       });
-      window.addEventListener('mouseup', () => isDragging = false);
+
+      window.addEventListener('mouseup', () => {
+        isResizing = false;
+      });
+    }
+
+    function updateGridFromBox(masterBox, boxW, boxH, startX = null, startY = null) {
+      const x0 = startX !== null ? startX : parseInt(masterBox.style.left);
+      const y0 = startY !== null ? startY : parseInt(masterBox.style.top);
+      const cols = parseInt(document.getElementById('cols').value);
+      const rows = parseInt(document.getElementById('rows').value);
+
+      container.querySelectorAll('.grid-overlay').forEach((box, idx) => {
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        const left = x0 + col * boxW;
+        const top = y0 + row * boxH;
+
+        box.style.left = `${left}px`;
+        box.style.top = `${top}px`;
+        box.style.width = `${boxW}px`;
+        box.style.height = `${boxH}px`;
+
+        box.dataset.x = left;
+        box.dataset.y = top;
+        box.dataset.w = boxW;
+        box.dataset.h = boxH;
+      });
     }
 
     exportBtn.addEventListener('click', () => {
