@@ -29,7 +29,7 @@
 </head>
 <body>
   <h1>Barcode Grid Splitter</h1>
-  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.1</p>
+  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.2</p>
   <input type="file" id="pdf-upload" accept="application/pdf">
   <div class="controls">
     <label>Columns: <input type="number" id="cols" value="2" min="1"></label>
@@ -81,6 +81,7 @@
         await page.render({ canvasContext: ctx, viewport }).promise;
         exportBtn.disabled = false;
         pageImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        console.log("PDF loaded and canvas rendered.");
       };
       reader.readAsArrayBuffer(file);
     });
@@ -142,6 +143,8 @@
           }
         }
       }
+
+      console.log("Grid boxes created:", draggableBoxes.length);
     });
 
     function makeDraggable(box) {
@@ -261,6 +264,7 @@
       const zip = new JSZip();
       labelImages = [];
       output.innerHTML = '';
+
       draggableBoxes.forEach((box, i) => {
         const x = parseInt(box.dataset.x);
         const y = parseInt(box.dataset.y);
@@ -281,20 +285,23 @@
         img.src = dataUrl;
         output.appendChild(img);
       });
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const filename = `labels-${yyyy}-${mm}-${dd}.zip`;
 
-    zip.generateAsync({ type: 'blob' }).then(blob => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
-});
+      // ⏱ Add date-based filename
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const filename = `labels-${yyyy}-${mm}-${dd}.zip`;
 
-    // auto-refresh grid on lock toggle
+      zip.generateAsync({ type: 'blob' }).then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+      });
+    });
+
+    // ✅ Always-active listener for lock toggle
     lockToggle.addEventListener('change', () => processBtn.click());
   </script>
 </body>
