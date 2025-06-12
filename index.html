@@ -37,6 +37,7 @@
     <label>Bottom Margin: <input type="number" id="bottom-margin" value="40"></label>
     <label>Left Margin: <input type="number" id="left-margin" value="10"></label>
     <label>Right Margin: <input type="number" id="right-margin" value="10"></label>
+    <label><input type="checkbox" id="lock-toggle" checked> Lock All Boxes (edit only the first one)</label>
     <button id="process">Preview Grid</button>
     <button id="export" disabled>Export All Labels</button>
   </div>
@@ -58,6 +59,7 @@
     const exportBtn = document.getElementById('export');
     const output = document.getElementById('output');
     const container = document.getElementById('canvas-container');
+    const lockToggle = document.getElementById('lock-toggle');
 
     let labelImages = [];
     let pageImage = null;
@@ -101,6 +103,7 @@
       const fullRowHeight = usableHeight / rows;
       const labelHeight = fullRowHeight;
 
+      const isLocked = lockToggle.checked;
       let referenceBox = null;
 
       for (let row = 0; row < rows; row++) {
@@ -125,6 +128,16 @@
             referenceBox = overlay;
             makeDraggable(referenceBox);
             makeResizableMaster(referenceBox, cols, rows, container);
+            overlay.style.zIndex = 5;
+            overlay.style.pointerEvents = 'auto';
+          } else {
+            if (isLocked) {
+              overlay.style.pointerEvents = 'none';
+            } else {
+              makeDraggable(overlay);
+              makeResizableSlave(overlay);
+              overlay.style.pointerEvents = 'auto';
+            }
           }
         }
       }
@@ -140,7 +153,10 @@
         function onMove(ev) {
           const dx = ev.clientX - startX;
           const dy = ev.clientY - startY;
-          updateGridFromBox(box, box.offsetWidth, box.offsetHeight, origX + dx, origY + dy);
+          box.style.left = `${origX + dx}px`;
+          box.style.top = `${origY + dy}px`;
+          box.dataset.x = origX + dx;
+          box.dataset.y = origY + dy;
         }
 
         function onUp() {
@@ -177,6 +193,38 @@
         const newW = startW + dx;
         const newH = startH + dy;
         updateGridFromBox(box, newW, newH);
+      });
+
+      window.addEventListener('mouseup', () => {
+        isResizing = false;
+      });
+    }
+
+    function makeResizableSlave(box) {
+      const handle = document.createElement('div');
+      handle.className = 'handle';
+      box.appendChild(handle);
+
+      let isResizing = false, startX, startY, startW, startH;
+
+      handle.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        isResizing = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        startW = box.offsetWidth;
+        startH = box.offsetHeight;
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        box.style.width = `${startW + dx}px`;
+        box.style.height = `${startH + dy}px`;
+        box.dataset.w = startW + dx;
+        box.dataset.h = startH + dy;
       });
 
       window.addEventListener('mouseup', () => {
@@ -239,6 +287,9 @@
         a.click();
       });
     });
+
+    // auto-refresh grid on lock toggle
+    lockToggle.addEventListener('change', () => processBtn.click());
   </script>
 </body>
 </html>
