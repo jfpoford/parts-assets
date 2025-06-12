@@ -281,13 +281,18 @@
         img.src = dataUrl;
         output.appendChild(img);
       });
-      zip.generateAsync({ type: 'blob' }).then(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'labels.zip';
-        a.click();
-      });
-    });
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const filename = `labels-${yyyy}-${mm}-${dd}.zip`;
+
+    zip.generateAsync({ type: 'blob' }).then(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+});
 
     // auto-refresh grid on lock toggle
     lockToggle.addEventListener('change', () => processBtn.click());
