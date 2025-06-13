@@ -29,7 +29,7 @@
 </head>
 <body>
   <h1>Barcode Grid Splitter</h1>
-  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.61</p>
+  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.7</p>
   <input type="file" id="pdf-upload" accept="application/pdf">
   <div class="controls">
     <label>Columns: <input type="number" id="cols" value="2" min="1"></label>
@@ -150,17 +150,22 @@
     function autoTightenBoxes(threshold = 200) {
   const pad = 8;
   const minHeight = 40;
-  const ignoreBottom = 60; // Pixels from bottom of canvas to skip
+  const ignoreBottom = 20;
 
-  draggableBoxes.forEach((box) => {
+  let refWidths = [];
+  let refHeights = [];
+
+  let avgWidth = null;
+  let avgHeight = null;
+
+  draggableBoxes.forEach((box, i) => {
     const x = parseInt(box.dataset.x);
     const y = parseInt(box.dataset.y);
     const w = parseInt(box.dataset.w);
     const h = parseInt(box.dataset.h);
 
-    // ❌ Skip boxes near the bottom of the page (likely footer)
     if (y + h > canvas.height - ignoreBottom) {
-      console.warn(`Skipping box at (${x}, ${y}) — near bottom footer area.`);
+      console.warn(`Skipping Label ${i + 1} at (${x}, ${y}) — near bottom footer.`);
       box.style.border = "1px dotted orange";
       return;
     }
@@ -171,24 +176,24 @@
     let darkPixels = [];
 
     for (let j = 0; j < h; j++) {
-      for (let i = 0; i < w; i++) {
-        const idx = (j * w + i) * 4;
+      for (let k = 0; k < w; k++) {
+        const idx = (j * w + k) * 4;
         const r = imgData[idx];
         const g = imgData[idx + 1];
         const b = imgData[idx + 2];
         const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
         if (brightness < threshold) {
-          minX = Math.min(minX, i);
-          maxX = Math.max(maxX, i);
+          minX = Math.min(minX, k);
+          maxX = Math.max(maxX, k);
           minY = Math.min(minY, j);
           maxY = Math.max(maxY, j);
-          darkPixels.push([i, j]);
+          darkPixels.push([k, j]);
         }
       }
     }
 
     const darkCount = darkPixels.length;
-    const pixelThreshold = (w * h) * 0.03; // require at least 3% dark pixels
+    const pixelThreshold = (w * h) * 0.03;
 
     if (darkCount > pixelThreshold) {
       minX = Math.max(minX - pad, 0);
@@ -197,8 +202,9 @@
       maxY = Math.min(maxY + pad, h - 1);
 
       let newW = maxX - minX + 1;
-      let newH = maxY - minY + 1;
-      newH = Math.max(newH, minHeight);
+      let newH = Math.max(maxY - minY + 1, minHeight);
+      const maxHeight = h;
+      newH = Math.min(newH, maxHeight);
 
       let newX = x + minX;
       let newY = y + minY;
@@ -207,6 +213,27 @@
       newY = Math.min(Math.max(newY, 0), canvas.height - 1);
       newW = Math.min(newW, canvas.width - newX);
       newH = Math.min(newH, canvas.height - newY);
+
+      // 🧠 Learn from boxes 0–5
+      if (i <= 5) {
+        refWidths.push(newW);
+        refHeights.push(newH);
+        if (i === 5) {
+          // Once we have all 6, compute averages
+          const sumW = refWidths.reduce((a, b) => a + b, 0);
+          const sumH = refHeights.reduce((a, b) => a + b, 0);
+          avgWidth = sumW / refWidths.length;
+          avgHeight = sumH / refHeights.length;
+        }
+      } else if (avgHeight !== null && avgWidth !== null) {
+        // Cap height and width to ±10% of average
+        const maxH = avgHeight * 1.1;
+        const minH = avgHeight * 0.9;
+        const maxW = avgWidth * 1.1;
+        const minW = avgWidth * 0.9;
+        newH = Math.max(Math.min(newH, maxH), minH);
+        newW = Math.max(Math.min(newW, maxW), minW);
+      }
 
       box.style.left = `${newX}px`;
       box.style.top = `${newY}px`;
@@ -217,14 +244,15 @@
       box.dataset.y = newY;
       box.dataset.w = newW;
       box.dataset.h = newH;
-      } else {
-      console.warn(`Box at (${x}, ${y}) skipped — not enough content (${darkCount} dark pixels).`);
+    } else {
+      console.warn(`Label ${i + 1} at (${x}, ${y}) skipped — not enough content.`);
       box.style.border = "1px dashed orange";
     }
   });
 
-  console.log("Auto-tighten with filtering complete.");
+  console.log("Auto-tighten using learned average size complete.");
 }
+
     function makeDraggable(box) {
       box.addEventListener('mousedown', (e) => {
         const startX = e.clientX;
