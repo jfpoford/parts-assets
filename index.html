@@ -29,7 +29,7 @@
 </head>
 <body>
   <h1>Barcode Grid Splitter</h1>
-  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.5</p>
+  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.6</p>
   <input type="file" id="pdf-upload" accept="application/pdf">
   <div class="controls">
     <label>Columns: <input type="number" id="cols" value="2" min="1"></label>
@@ -148,71 +148,84 @@
     });
 
     function autoTightenBoxes(threshold = 200) {
-      const pad = 8;
-      const minHeight = 40;
+  const pad = 8;
+  const minHeight = 40;
+  const ignoreBottom = 60; // Pixels from bottom of canvas to skip
 
-      draggableBoxes.forEach((box) => {
-        const x = parseInt(box.dataset.x);
-        const y = parseInt(box.dataset.y);
-        const w = parseInt(box.dataset.w);
-        const h = parseInt(box.dataset.h);
+  draggableBoxes.forEach((box) => {
+    const x = parseInt(box.dataset.x);
+    const y = parseInt(box.dataset.y);
+    const w = parseInt(box.dataset.w);
+    const h = parseInt(box.dataset.h);
 
-        const imgData = ctx.getImageData(x, y, w, h).data;
+    // ❌ Skip boxes near the bottom of the page (likely footer)
+    if (y + h > canvas.height - ignoreBottom) {
+      console.warn(`Skipping box at (${x}, ${y}) — near bottom footer area.`);
+      box.style.border = "1px dotted orange";
+      return;
+    }
 
-        let minX = w, minY = h, maxX = 0, maxY = 0;
-        let found = false;
+    const imgData = ctx.getImageData(x, y, w, h).data;
 
-        for (let j = 0; j < h; j++) {
-          for (let i = 0; i < w; i++) {
-            const idx = (j * w + i) * 4;
-            const r = imgData[idx];
-            const g = imgData[idx + 1];
-            const b = imgData[idx + 2];
-            const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-            if (brightness < threshold) {
-              minX = Math.min(minX, i);
-              maxX = Math.max(maxX, i);
-              minY = Math.min(minY, j);
-              maxY = Math.max(maxY, j);
-              found = true;
-            }
-          }
+    let minX = w, minY = h, maxX = 0, maxY = 0;
+    let darkPixels = [];
+
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const idx = (j * w + i) * 4;
+        const r = imgData[idx];
+        const g = imgData[idx + 1];
+        const b = imgData[idx + 2];
+        const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+        if (brightness < threshold) {
+          minX = Math.min(minX, i);
+          maxX = Math.max(maxX, i);
+          minY = Math.min(minY, j);
+          maxY = Math.max(maxY, j);
+          darkPixels.push([i, j]);
         }
+      }
+    }
 
-        if (found) {
-          minX = Math.max(minX - pad, 0);
-          minY = Math.max(minY - pad, 0);
-          maxX = Math.min(maxX + pad, w - 1);
-          maxY = Math.min(maxY + pad, h - 1);
+    const darkCount = darkPixels.length;
+    const pixelThreshold = (w * h) * 0.03; // require at least 3% dark pixels
 
-          let newW = maxX - minX + 1;
-          let newH = maxY - minY + 1;
+    if (darkCount > pixelThreshold) {
+      minX = Math.max(minX - pad, 0);
+      minY = Math.max(minY - pad, 0);
+      maxX = Math.min(maxX + pad, w - 1);
+      maxY = Math.min(maxY + pad, h - 1);
 
-          newH = Math.max(newH, minHeight); // enforce minimum height
+      let newW = maxX - minX + 1;
+      let newH = maxY - minY + 1;
+      newH = Math.max(newH, minHeight);
 
-          let newX = x + minX;
-          let newY = y + minY;
+      let newX = x + minX;
+      let newY = y + minY;
 
-          // clamp within canvas
-          newX = Math.min(Math.max(newX, 0), canvas.width - 1);
-          newY = Math.min(Math.max(newY, 0), canvas.height - 1);
-          newW = Math.min(newW, canvas.width - newX);
-          newH = Math.min(newH, canvas.height - newY);
+      newX = Math.min(Math.max(newX, 0), canvas.width - 1);
+      newY = Math.min(Math.max(newY, 0), canvas.height - 1);
+      newW = Math.min(newW, canvas.width - newX);
+      newH = Math.min(newH, canvas.height - newY);
 
-          box.style.left = `${newX}px`;
-          box.style.top = `${newY}px`;
-          box.style.width = `${newW}px`;
-          box.style.height = `${newH}px`;
+      box.style.left = `${newX}px`;
+      box.style.top = `${newY}px`;
+      box.style.width = `${newW}px`;
+      box.style.height = `${newH}px`;
 
-          box.dataset.x = newX;
-          box.dataset.y = newY;
-          box.dataset.w = newW;
-          box.dataset.h = newH;
-        }
-        else {
-  console.warn(`Box at (${x}, ${y}) has no visible content — likely white space.`);
-  box.style.border = "1px dashed orange"; // change red dashed to orange
+      box.dataset.x = newX;
+      box.dataset.y = newY;
+      box.dataset.w = newW;
+      box.dataset.h = newH;
+    } else {
+      console.warn(`Box at (${x}, ${y}) skipped — not enough content (${darkCount} dark pixels).`);
+      box.style.border = "1px dashed orange";
+    }
+  });
+
+  console.log("Auto-tighten with filtering complete.");
 }
+
 
       });
 
