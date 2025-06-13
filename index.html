@@ -29,7 +29,7 @@
 </head>
 <body>
   <h1>Barcode Grid Splitter</h1>
-  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.8</p>
+  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.9</p>
   <input type="file" id="pdf-upload" accept="application/pdf">
   <div class="controls">
     <label>Columns: <input type="number" id="cols" value="2" min="1"></label>
@@ -152,11 +152,14 @@
   const minHeight = 40;
   const ignoreBottom = 20;
 
-  let refWidths = [], refHeights = [], refYPositions = [];
+  let refWidths = [], refHeights = [];
+  let refLeftXs = [], refRightXs = [];
+  let rowYs = {}; // key: row index (0–4), value: array of Y values
 
   let avgWidth = null;
   let avgHeight = null;
-  let rowYs = {}; // key: row index (0–4), value: avgY
+  let avgLeftX = null;
+  let avgRightX = null;
 
   const cols = parseInt(document.getElementById('cols').value);
 
@@ -167,6 +170,8 @@
     const h = parseInt(box.dataset.h);
 
     const row = Math.floor(i / cols);
+    const col = i % cols;
+
     if (!rowYs[row]) rowYs[row] = [];
 
     if (y + h > canvas.height - ignoreBottom) {
@@ -208,8 +213,7 @@
 
       let newW = maxX - minX + 1;
       let newH = Math.max(maxY - minY + 1, minHeight);
-      const maxHeight = h;
-      newH = Math.min(newH, maxHeight);
+      newH = Math.min(newH, h);
 
       let newX = x + minX;
       let newY = y + minY;
@@ -219,29 +223,40 @@
       newW = Math.min(newW, canvas.width - newX);
       newH = Math.min(newH, canvas.height - newY);
 
-      // Learn from boxes 0–5 (labels 1–6)
       if (i <= 5) {
         refWidths.push(newW);
         refHeights.push(newH);
         rowYs[row].push(newY);
+        if (col === 0) refLeftXs.push(newX);
+        else refRightXs.push(newX);
+
         if (i === 5) {
           avgWidth = refWidths.reduce((a, b) => a + b, 0) / refWidths.length;
           avgHeight = refHeights.reduce((a, b) => a + b, 0) / refHeights.length;
+          avgLeftX = refLeftXs.reduce((a, b) => a + b, 0) / refLeftXs.length;
+          avgRightX = refRightXs.reduce((a, b) => a + b, 0) / refRightXs.length;
         }
-      } else if (avgWidth !== null && avgHeight !== null) {
-        // Clamp size to learned average ±10%
-        const maxH = avgHeight * 1.1;
-        const minH = avgHeight * 0.9;
-        const maxW = avgWidth * 1.1;
-        const minW = avgWidth * 0.9;
-        newH = Math.max(Math.min(newH, maxH), minH);
-        newW = Math.max(Math.min(newW, maxW), minW);
+      } else {
+        // Align size to average
+        if (avgHeight && avgWidth) {
+          newH = Math.max(Math.min(newH, avgHeight * 1.1), avgHeight * 0.9);
+          newW = Math.max(Math.min(newW, avgWidth * 1.1), avgWidth * 0.9);
+        }
 
-        // Snap Y position to average row position
+        // Snap Y to known good row if available
         if (rowYs[row] && rowYs[row].length > 0) {
           const avgY = rowYs[row].reduce((a, b) => a + b, 0) / rowYs[row].length;
           newY = avgY;
+        } else if (row === 4 && rowYs[2]) {
+          // Row 5 fallback → use Row 3 Y + known vertical spacing
+          const baseY = rowYs[2].reduce((a, b) => a + b, 0) / rowYs[2].length;
+          const spacing = avgHeight || h;
+          newY = baseY + spacing * 2;
         }
+
+        // Snap X to learned average left/right
+        if (col === 0 && avgLeftX !== null) newX = avgLeftX;
+        if (col === 1 && avgRightX !== null) newX = avgRightX;
       }
 
       box.style.left = `${newX}px`;
@@ -259,7 +274,7 @@
     }
   });
 
-  console.log("Auto-tighten with learned size + row alignment complete.");
+  console.log("Auto-tighten with learned size + row + column alignment complete.");
 }
 
 
