@@ -209,6 +209,11 @@
           box.dataset.w = newW;
           box.dataset.h = newH;
         }
+        else {
+  console.warn(`Box at (${x}, ${y}) has no visible content — likely white space.`);
+  box.style.border = "1px dashed orange"; // change red dashed to orange
+}
+
       });
 
       console.log("Auto-tighten complete.");
