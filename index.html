@@ -29,7 +29,7 @@
 </head>
 <body>
   <h1>Barcode Grid Splitter</h1>
-  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.3</p>
+  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.4</p>
   <input type="file" id="pdf-upload" accept="application/pdf">
   <div class="controls">
     <label>Columns: <input type="number" id="cols" value="2" min="1"></label>
@@ -103,8 +103,7 @@
       const usableWidth = canvas.width - margins.left - margins.right;
       const usableHeight = canvas.height - margins.top - margins.bottom;
       const labelWidth = usableWidth / cols;
-      const fullRowHeight = usableHeight / rows;
-      const labelHeight = fullRowHeight;
+      const labelHeight = usableHeight / rows;
 
       const isLocked = lockToggle.checked;
       let referenceBox = null;
@@ -147,6 +146,73 @@
 
       console.log("Grid boxes created:", draggableBoxes.length);
     });
+
+    function autoTightenBoxes(threshold = 200) {
+      const pad = 8;
+      const minHeight = 40;
+
+      draggableBoxes.forEach((box) => {
+        const x = parseInt(box.dataset.x);
+        const y = parseInt(box.dataset.y);
+        const w = parseInt(box.dataset.w);
+        const h = parseInt(box.dataset.h);
+
+        const imgData = ctx.getImageData(x, y, w, h).data;
+
+        let minX = w, minY = h, maxX = 0, maxY = 0;
+        let found = false;
+
+        for (let j = 0; j < h; j++) {
+          for (let i = 0; i < w; i++) {
+            const idx = (j * w + i) * 4;
+            const r = imgData[idx];
+            const g = imgData[idx + 1];
+            const b = imgData[idx + 2];
+            const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+            if (brightness < threshold) {
+              minX = Math.min(minX, i);
+              maxX = Math.max(maxX, i);
+              minY = Math.min(minY, j);
+              maxY = Math.max(maxY, j);
+              found = true;
+            }
+          }
+        }
+
+        if (found) {
+          minX = Math.max(minX - pad, 0);
+          minY = Math.max(minY - pad, 0);
+          maxX = Math.min(maxX + pad, w - 1);
+          maxY = Math.min(maxY + pad, h - 1);
+
+          let newW = maxX - minX + 1;
+          let newH = maxY - minY + 1;
+
+          newH = Math.max(newH, minHeight); // enforce minimum height
+
+          let newX = x + minX;
+          let newY = y + minY;
+
+          // clamp within canvas
+          newX = Math.min(Math.max(newX, 0), canvas.width - 1);
+          newY = Math.min(Math.max(newY, 0), canvas.height - 1);
+          newW = Math.min(newW, canvas.width - newX);
+          newH = Math.min(newH, canvas.height - newY);
+
+          box.style.left = `${newX}px`;
+          box.style.top = `${newY}px`;
+          box.style.width = `${newW}px`;
+          box.style.height = `${newH}px`;
+
+          box.dataset.x = newX;
+          box.dataset.y = newY;
+          box.dataset.w = newW;
+          box.dataset.h = newH;
+        }
+      });
+
+      console.log("Auto-tighten complete.");
+    }
 
     function makeDraggable(box) {
       box.addEventListener('mousedown', (e) => {
@@ -259,63 +325,6 @@
         box.dataset.w = boxW;
         box.dataset.h = boxH;
       });
-    }
-
-    function autoTightenBoxes(threshold = 200) {
-      draggableBoxes.forEach((box) => {
-        const x = parseInt(box.dataset.x);
-        const y = parseInt(box.dataset.y);
-        const w = parseInt(box.dataset.w);
-        const h = parseInt(box.dataset.h);
-
-        const imgData = ctx.getImageData(x, y, w, h).data;
-
-        let minX = w, minY = h, maxX = 0, maxY = 0;
-        let found = false;
-
-        for (let j = 0; j < h; j++) {
-          for (let i = 0; i < w; i++) {
-            const idx = (j * w + i) * 4;
-            const r = imgData[idx];
-            const g = imgData[idx + 1];
-            const b = imgData[idx + 2];
-
-            const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-            if (brightness < threshold) {
-              if (i < minX) minX = i;
-              if (i > maxX) maxX = i;
-              if (j < minY) minY = j;
-              if (j > maxY) maxY = j;
-              found = true;
-            }
-          }
-        }
-
-        if (found) {
-          const pad = 4;
-          minX = Math.max(minX - pad, 0);
-          minY = Math.max(minY - pad, 0);
-          maxX = Math.min(maxX + pad, w - 1);
-          maxY = Math.min(maxY + pad, h - 1);
-
-          const newW = maxX - minX + 1;
-          const newH = maxY - minY + 1;
-          const newX = x + minX;
-          const newY = y + minY;
-
-          box.style.left = `${newX}px`;
-          box.style.top = `${newY}px`;
-          box.style.width = `${newW}px`;
-          box.style.height = `${newH}px`;
-
-          box.dataset.x = newX;
-          box.dataset.y = newY;
-          box.dataset.w = newW;
-          box.dataset.h = newH;
-        }
-      });
-
-      console.log("Auto-tighten complete.");
     }
 
     exportBtn.addEventListener('click', () => {
