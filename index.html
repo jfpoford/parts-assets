@@ -29,7 +29,7 @@
 </head>
 <body>
   <h1>Barcode Grid Splitter</h1>
-  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.7</p>
+  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.8</p>
   <input type="file" id="pdf-upload" accept="application/pdf">
   <div class="controls">
     <label>Columns: <input type="number" id="cols" value="2" min="1"></label>
@@ -148,21 +148,26 @@
     });
 
     function autoTightenBoxes(threshold = 200) {
-  const pad = 8;
+  const pad = 6;
   const minHeight = 40;
   const ignoreBottom = 20;
 
-  let refWidths = [];
-  let refHeights = [];
+  let refWidths = [], refHeights = [], refYPositions = [];
 
   let avgWidth = null;
   let avgHeight = null;
+  let rowYs = {}; // key: row index (0–4), value: avgY
+
+  const cols = parseInt(document.getElementById('cols').value);
 
   draggableBoxes.forEach((box, i) => {
     const x = parseInt(box.dataset.x);
     const y = parseInt(box.dataset.y);
     const w = parseInt(box.dataset.w);
     const h = parseInt(box.dataset.h);
+
+    const row = Math.floor(i / cols);
+    if (!rowYs[row]) rowYs[row] = [];
 
     if (y + h > canvas.height - ignoreBottom) {
       console.warn(`Skipping Label ${i + 1} at (${x}, ${y}) — near bottom footer.`);
@@ -214,25 +219,29 @@
       newW = Math.min(newW, canvas.width - newX);
       newH = Math.min(newH, canvas.height - newY);
 
-      // 🧠 Learn from boxes 0–5
+      // Learn from boxes 0–5 (labels 1–6)
       if (i <= 5) {
         refWidths.push(newW);
         refHeights.push(newH);
+        rowYs[row].push(newY);
         if (i === 5) {
-          // Once we have all 6, compute averages
-          const sumW = refWidths.reduce((a, b) => a + b, 0);
-          const sumH = refHeights.reduce((a, b) => a + b, 0);
-          avgWidth = sumW / refWidths.length;
-          avgHeight = sumH / refHeights.length;
+          avgWidth = refWidths.reduce((a, b) => a + b, 0) / refWidths.length;
+          avgHeight = refHeights.reduce((a, b) => a + b, 0) / refHeights.length;
         }
-      } else if (avgHeight !== null && avgWidth !== null) {
-        // Cap height and width to ±10% of average
+      } else if (avgWidth !== null && avgHeight !== null) {
+        // Clamp size to learned average ±10%
         const maxH = avgHeight * 1.1;
         const minH = avgHeight * 0.9;
         const maxW = avgWidth * 1.1;
         const minW = avgWidth * 0.9;
         newH = Math.max(Math.min(newH, maxH), minH);
         newW = Math.max(Math.min(newW, maxW), minW);
+
+        // Snap Y position to average row position
+        if (rowYs[row] && rowYs[row].length > 0) {
+          const avgY = rowYs[row].reduce((a, b) => a + b, 0) / rowYs[row].length;
+          newY = avgY;
+        }
       }
 
       box.style.left = `${newX}px`;
@@ -250,8 +259,9 @@
     }
   });
 
-  console.log("Auto-tighten using learned average size complete.");
+  console.log("Auto-tighten with learned size + row alignment complete.");
 }
+
 
     function makeDraggable(box) {
       box.addEventListener('mousedown', (e) => {
