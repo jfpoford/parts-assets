@@ -29,7 +29,7 @@
 </head>
 <body>
   <h1>Barcode Grid Splitter</h1>
-  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.2</p>
+  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.3</p>
   <input type="file" id="pdf-upload" accept="application/pdf">
   <div class="controls">
     <label>Columns: <input type="number" id="cols" value="2" min="1"></label>
@@ -41,6 +41,7 @@
     <label><input type="checkbox" id="lock-toggle" checked> Lock All Boxes (edit only the first one)</label>
     <button id="process">Preview Grid</button>
     <button id="export" disabled>Export All Labels</button>
+    <button onclick="autoTightenBoxes()">Auto-Center Boxes</button>
   </div>
 
   <div id="canvas-container">
@@ -260,6 +261,63 @@
       });
     }
 
+    function autoTightenBoxes(threshold = 200) {
+      draggableBoxes.forEach((box) => {
+        const x = parseInt(box.dataset.x);
+        const y = parseInt(box.dataset.y);
+        const w = parseInt(box.dataset.w);
+        const h = parseInt(box.dataset.h);
+
+        const imgData = ctx.getImageData(x, y, w, h).data;
+
+        let minX = w, minY = h, maxX = 0, maxY = 0;
+        let found = false;
+
+        for (let j = 0; j < h; j++) {
+          for (let i = 0; i < w; i++) {
+            const idx = (j * w + i) * 4;
+            const r = imgData[idx];
+            const g = imgData[idx + 1];
+            const b = imgData[idx + 2];
+
+            const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+            if (brightness < threshold) {
+              if (i < minX) minX = i;
+              if (i > maxX) maxX = i;
+              if (j < minY) minY = j;
+              if (j > maxY) maxY = j;
+              found = true;
+            }
+          }
+        }
+
+        if (found) {
+          const pad = 4;
+          minX = Math.max(minX - pad, 0);
+          minY = Math.max(minY - pad, 0);
+          maxX = Math.min(maxX + pad, w - 1);
+          maxY = Math.min(maxY + pad, h - 1);
+
+          const newW = maxX - minX + 1;
+          const newH = maxY - minY + 1;
+          const newX = x + minX;
+          const newY = y + minY;
+
+          box.style.left = `${newX}px`;
+          box.style.top = `${newY}px`;
+          box.style.width = `${newW}px`;
+          box.style.height = `${newH}px`;
+
+          box.dataset.x = newX;
+          box.dataset.y = newY;
+          box.dataset.w = newW;
+          box.dataset.h = newH;
+        }
+      });
+
+      console.log("Auto-tighten complete.");
+    }
+
     exportBtn.addEventListener('click', () => {
       const zip = new JSZip();
       labelImages = [];
@@ -286,7 +344,6 @@
         output.appendChild(img);
       });
 
-      // ⏱ Add date-based filename
       const now = new Date();
       const yyyy = now.getFullYear();
       const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -301,7 +358,6 @@
       });
     });
 
-    // ✅ Always-active listener for lock toggle
     lockToggle.addEventListener('change', () => processBtn.click());
   </script>
 </body>
