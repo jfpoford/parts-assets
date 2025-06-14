@@ -29,7 +29,7 @@
 </head>
 <body>
   <h1>Barcode Grid Splitter</h1>
-  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.1.0</p>
+  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.1.1</p>
   <input type="file" id="pdf-upload" accept="application/pdf">
   <div class="controls">
     <label>Columns: <input type="number" id="cols" value="2" min="1"></label>
@@ -238,24 +238,23 @@
           avgRightX = refRightXs.reduce((a, b) => a + b, 0) / refRightXs.length;
         }
       } else {
-        // 🔒 Lock labels 9–10 to learned size and fixed position
         if (i === 8 || i === 9) {
+          // Labels 9 & 10: force size, position, and give extra room
           if (avgWidth && avgHeight) {
             newW = avgWidth;
-            newH = avgHeight;
+            newH = avgHeight + 8;
           }
 
           if (rowYs[3] && rowYs[3].length > 0) {
             const row3Y = rowYs[3].reduce((a, b) => a + b, 0) / rowYs[3].length;
-          newY = row3Y + avgHeight + 4; // move down a little instead of up
-          newH = avgHeight + 8;         // give extra breathing room
+            newY = row3Y + avgHeight + 4;
           }
 
           if (col === 0 && avgLeftX !== null) newX = avgLeftX;
           if (col === 1 && avgRightX !== null) newX = avgRightX;
 
         } else {
-          // Other rows (labels 7–8)
+          // Other rows (e.g. 7–8)
           if (avgHeight && avgWidth) {
             newH = Math.max(Math.min(newH, avgHeight * 1.1), avgHeight * 0.9);
             newW = Math.max(Math.min(newW, avgWidth * 1.1), avgWidth * 0.9);
@@ -271,7 +270,7 @@
         }
       }
 
-      // Apply result
+      // Apply box
       box.style.left = `${newX}px`;
       box.style.top = `${newY}px`;
       box.style.width = `${newW}px`;
@@ -287,8 +286,9 @@
     }
   });
 
-  console.log("Auto-tighten complete with learned sizing and fine-tuned row 5 alignment.");
+  console.log("Auto-tighten complete with final adjustments for row 5.");
 }
+
 
     function makeDraggable(box) {
       box.addEventListener('mousedown', (e) => {
