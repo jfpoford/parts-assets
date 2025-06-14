@@ -29,7 +29,7 @@
 </head>
 <body>
   <h1>Barcode Grid Splitter</h1>
-  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.91</p>
+  <p style="font-size: 0.8em; color: gray; margin-top: -0.5em;">v1.0.92</p>
   <input type="file" id="pdf-upload" accept="application/pdf">
   <div class="controls">
     <label>Columns: <input type="number" id="cols" value="2" min="1"></label>
@@ -238,7 +238,7 @@
           avgRightX = refRightXs.reduce((a, b) => a + b, 0) / refRightXs.length;
         }
       } else {
-        // 🔒 Lock labels 9–10 to average size and position
+        // 🔒 Lock labels 9–10 to learned size and fixed position
         if (i === 8 || i === 9) {
           if (avgWidth && avgHeight) {
             newW = avgWidth;
@@ -247,14 +247,14 @@
 
           if (rowYs[3] && rowYs[3].length > 0) {
             const row3Y = rowYs[3].reduce((a, b) => a + b, 0) / rowYs[3].length;
-            newY = row3Y + avgHeight;
+            newY = row3Y + avgHeight - 6; // ← Shift upward to avoid top-line cutoff
           }
 
           if (col === 0 && avgLeftX !== null) newX = avgLeftX;
           if (col === 1 && avgRightX !== null) newX = avgRightX;
 
         } else {
-          // All other labels (7–8)
+          // Other rows (labels 7–8)
           if (avgHeight && avgWidth) {
             newH = Math.max(Math.min(newH, avgHeight * 1.1), avgHeight * 0.9);
             newW = Math.max(Math.min(newW, avgWidth * 1.1), avgWidth * 0.9);
@@ -270,7 +270,7 @@
         }
       }
 
-      // Apply changes to DOM
+      // Apply result
       box.style.left = `${newX}px`;
       box.style.top = `${newY}px`;
       box.style.width = `${newW}px`;
@@ -286,8 +286,9 @@
     }
   });
 
-  console.log("Auto-tighten complete with learned sizing and hard snap for bottom row.");
+  console.log("Auto-tighten complete with learned sizing and fine-tuned row 5 alignment.");
 }
+
     function makeDraggable(box) {
       box.addEventListener('mousedown', (e) => {
         const startX = e.clientX;
